@@ -48,10 +48,10 @@ Visit our live site at: [campus-gig-webathon.netlify.app](https://campus-gig-web
 
 | Name | Role | Core Contributions |
 | :--- | :--- | :--- |
-| **Nayaz (You)** | **Lead Developer** | Full-stack architecture, Supabase integration, EAS Android builds, and Web deployment. |
-| **Teammate Name** | **UI/UX & Frontend** | Figma design, NativeWind styling, and Dashboard/Profile screen implementation. |
-| **Teammate Name** | **Backend & Logic** | SQL schema, Row Level Security (RLS) rules, and real-time task logic. |
-| **Teammate Name** | **Quality & Testing** | Bug fixing, dependency management, and documentation. |
+| **A Revanth** | **Team Leader** | Full-stack architecture, Supabase integration, EAS Android builds, and Web deployment. |
+| **Sk Nayaz Ahmed** | **UI/UX & Frontend** | Figma design, NativeWind styling, and Dashboard/Profile screen implementation. |
+| **M Sri Varsha** | **Backend & Logic** | SQL schema, Row Level Security (RLS) rules, and real-time task logic. |
+| **U Pinakapani** | **Quality & Testing** | Bug fixing, dependency management, and documentation. |
 
 ---
 
