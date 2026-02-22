@@ -52,7 +52,7 @@ Visit our live site at: [campus-gig-webathon.netlify.app](https://campus-gig-web
 | **Sk Nayaz Ahmed** | **UI/UX & Frontend** | Figma design, NativeWind styling, and Dashboard/Profile screen implementation. |
 | **M Sri Varsha** | **Backend & Logic** | SQL schema, Row Level Security (RLS) rules, and real-time task logic. |
 | **U Pinakapani** | **Quality & Testing** | Bug fixing, dependency management, and documentation. |
-
+| **M Srihitha** |  **Database**  |   Helped in Connection with Database   |
 ---
 
 ## 💻 Local Development
