@@ -49,9 +49,9 @@ Visit our live site at: [campus-gig-webathon.netlify.app](https://campus-gig-web
 | Name | Role | Core Contributions |
 | :--- | :--- | :--- |
 | **A Revanth** | **Team Leader** | Full-stack architecture, Supabase integration, EAS Android builds, and Web deployment. |
+| **U Srivalli pinakapani** | **Quality & Testing** | Bug fixing, dependency management, and documentation. |
 | **Sk Nayaz Ahmed** | **UI/UX & Frontend** | Figma design, NativeWind styling, and Dashboard/Profile screen implementation. |
 | **M Sri Varsha** | **Backend & Logic** | SQL schema, Row Level Security (RLS) rules, and real-time task logic. |
-| **U Pinakapani** | **Quality & Testing** | Bug fixing, dependency management, and documentation. |
 | **M Srihitha** |  **Database**  |   Helped in Connection with Database   |
 ---
 
