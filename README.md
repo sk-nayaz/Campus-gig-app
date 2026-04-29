@@ -5,9 +5,7 @@ CampusGig is a real-time, cross-platform gig economy app designed to connect stu
 
 
 > "We didn't just build a mobile app; we built a unified cross-platform ecosystem. By utilizing React Native Web and Supabase, our codebase simultaneously compiles to Android, iOS, and the Web, ensuring every student at VNRVJIET can access the marketplace regardless of what device they own."
-
----
-
+> 
 ## 🛠️ Tech Stack
 * **Frontend:** React Native (Expo) & NativeWind (Tailwind CSS)
 * **Web Support:** React Native Web
