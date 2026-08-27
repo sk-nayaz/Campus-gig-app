@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity, LayoutAnimation, Platform, UI
 import * as Clipboard from 'expo-clipboard';
 import { BlurView } from 'expo-blur';
 import { Lock, Zap, CheckCircle2, MapPin, ShieldCheck, ShieldAlert, Trash2, Copy, Edit2, Clock } from 'lucide-react-native';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { doc, getDoc, updateDoc, deleteDoc, setDoc, runTransaction, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import EditTaskModal from './EditTaskModal';
 import { useAuth } from '../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
@@ -81,14 +82,13 @@ export default function TaskCard({
         const checkReviewStatus = async () => {
             if (task.status === 'completed' && session?.user?.id) {
                 try {
-                    const { data, error } = await supabase
-                        .from('reviews')
-                        .select('id')
-                        .eq('task_id', task.id)
-                        .eq('reviewer_id', session.user.id)
-                        .maybeSingle();
-
-                    if (data) {
+                    const q = query(
+                        collection(db, 'reviews'),
+                        where('task_id', '==', task.id),
+                        where('reviewer_id', '==', session.user.id)
+                    );
+                    const querySnapshot = await getDocs(q);
+                    if (!querySnapshot.empty) {
                         setHasReviewed(true);
                     }
                 } catch (error) {
@@ -114,14 +114,13 @@ export default function TaskCard({
                 }
 
                 if (targetId) {
-                    const { data, error } = await supabase
-                        .from('profiles')
-                        .select('phone_number, email_contact')
-                        .eq('id', targetId)
-                        .maybeSingle();
-
-                    if (!error && data) {
-                        setContactData(data);
+                    const docSnap = await getDoc(doc(db, 'profiles', targetId));
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        setContactData({
+                            phone_number: data.phone_number,
+                            email_contact: data.email_contact
+                        });
                     }
                 }
             };
@@ -157,14 +156,30 @@ export default function TaskCard({
         if (!session?.user?.id) return;
         setIsSubmitting(true);
         try {
-            const { error } = await supabase
-                .from('tasks')
-                .update({ assigned_to: session.user.id, status: 'in_progress' })
-                .eq('id', task.id);
+            const taskRef = doc(db, 'tasks', task.id);
+            await runTransaction(db, async (transaction) => {
+                const taskDoc = await transaction.get(taskRef);
+                if (!taskDoc.exists()) {
+                    throw new Error("Task does not exist!");
+                }
 
-            if (error) throw error;
+                const taskData = taskDoc.data();
+                if (taskData.assigned_to) {
+                    throw new Error("Task already claimed by someone else!");
+                }
+                if (taskData.status !== 'open') {
+                    throw new Error("Task is no longer open!");
+                }
+
+                transaction.update(taskRef, {
+                    assigned_to: session.user.id,
+                    status: 'in_progress'
+                });
+            });
+
             setIsClaimed(true);
             Alert.alert('Task Claimed! ⚡', 'You are now assigned to this task.');
+            onActionComplete?.(); // Optional: Trigger UI refresh
         } catch (error: any) {
             Alert.alert('Error', error.message);
         } finally {
@@ -176,20 +191,30 @@ export default function TaskCard({
         if (!session?.user?.id) return;
         setIsSubmitting(true);
         try {
-            const { error } = await supabase
-                .from('task_applications')
-                .insert({ task_id: task.id, applicant_id: session.user.id });
+            // First check if already applied to prevent duplicates
+            const existingQ = query(
+                collection(db, 'task_applications'),
+                where('task_id', '==', task.id),
+                where('applicant_id', '==', session.user.id)
+            );
+            const existingSnap = await getDocs(existingQ);
 
-            if (error) {
-                if (error.code === '23505') {
-                    setHasApplied(true); // Already applied, show state
-                    Alert.alert('Already Applied', 'You have already expressed interest in this task.');
-                    return;
-                }
-                throw error;
+            if (!existingSnap.empty) {
+                setHasApplied(true); // Already applied, show state
+                Alert.alert('Already Applied', 'You have already expressed interest in this task.');
+                setIsSubmitting(false);
+                return;
             }
+
+            await addDoc(collection(db, 'task_applications'), {
+                task_id: task.id,
+                applicant_id: session.user.id,
+                created_at: new Date().toISOString()
+            });
+
             setHasApplied(true);
             Alert.alert('Application Sent! ⭐', 'The creator will review your profile.');
+            onActionComplete?.(); // Optional: Trigger UI refresh
         } catch (error: any) {
             Alert.alert('Error', error.message);
         } finally {
@@ -208,21 +233,16 @@ export default function TaskCard({
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            const { error } = await supabase
-                                .from('tasks')
-                                .delete()
-                                .eq('id', task.id)
-                                .eq('creator_id', session?.user?.id); // Security check: only owner can delete
-
-                            if (error) {
-                                Alert.alert('Error', 'Could not delete task. Please try again.');
-                                console.error(error);
-                                return;
+                            if (task.creator_id !== session?.user?.id) {
+                                throw new Error('Not authorized to delete this task');
                             }
+                            await deleteDoc(doc(db, 'tasks', task.id));
+
                             setIsDeleted(true); // Optimistic UI removal
                             onActionComplete?.(); // Sync parent states if bound
                         } catch (error: any) {
                             Alert.alert('Error', 'Could not delete task. Please try again.');
+                            console.error(error);
                         }
                     }
                 }
@@ -234,20 +254,19 @@ export default function TaskCard({
         if (!session?.user?.id) return;
         setIsSubmitting(true);
         try {
-            const { error } = await supabase
-                .from('tasks')
-                .update({ status: 'pending_payment' })
-                .eq('id', task.id);
-
-            if (error) throw error;
+            await updateDoc(doc(db, 'tasks', task.id), {
+                status: 'pending_payment'
+            });
 
             // Send notification to creator
-            await supabase.from('notifications').insert({
+            await addDoc(collection(db, 'notifications'), {
                 user_id: task.creator_id,
                 title: 'Task Finished!',
                 message: `The worker has marked "${task.title}" as done. Please confirm payment to close the task.`,
                 type: 'task_update',
-                reference_id: task.id
+                reference_id: task.id,
+                created_at: new Date().toISOString(),
+                is_read: false
             });
 
             Alert.alert('Task Marked Done! 🎉', 'Waiting for the creator to confirm payment.');
@@ -265,12 +284,9 @@ export default function TaskCard({
         if (!session?.user?.id) return;
         setIsSubmitting(true);
         try {
-            const { error } = await supabase
-                .from('tasks')
-                .update({ status: 'completed' })
-                .eq('id', task.id);
-
-            if (error) throw error;
+            await updateDoc(doc(db, 'tasks', task.id), {
+                status: 'completed'
+            });
 
             Alert.alert('Success!', 'Task moved to Done history.');
 
@@ -298,17 +314,14 @@ export default function TaskCard({
         }
 
         try {
-            const { error } = await supabase
-                .from('reviews')
-                .insert({
-                    task_id: task.id,
-                    reviewer_id: session.user.id,
-                    reviewee_id: revieweeId,
-                    rating,
-                    comment
-                });
-
-            if (error) throw error;
+            await addDoc(collection(db, 'reviews'), {
+                task_id: task.id,
+                reviewer_id: session.user.id,
+                reviewee_id: revieweeId,
+                rating,
+                comment,
+                created_at: new Date().toISOString()
+            });
 
             setHasReviewed(true);
             setIsReviewModalVisible(false);

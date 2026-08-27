@@ -14,7 +14,8 @@ import { useNavigation } from '@react-navigation/native';
 import TaskCard, { TaskType } from '../components/TaskCard';
 
 import { RefreshControl, ActivityIndicator } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { collection, query, where, getDocs, orderBy, getDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { checkAvailabilityMatch } from '../utils/timeHelpers';
 type FilterType = 'newest' | 'pay' | 'skills' | 'quick' | 'smart';
@@ -35,44 +36,80 @@ export default function OnlineTasksScreen() {
             if (!session?.user?.id) return;
 
             // Step 1: Fetch Profile for availability and skills
-            const { data: profileData } = await supabase
-                .from('profiles')
-                .select('availability, skills')
-                .eq('id', session.user.id)
-                .single();
+            let profileData: any = null;
+            const profileRef = doc(db, 'profiles', session.user.id);
+            const profileSnap = await getDoc(profileRef);
+            if (profileSnap.exists()) {
+                profileData = profileSnap.data();
+            }
 
             // Step 2: Build dynamic Task query
-            let query = supabase
-                .from('tasks')
-                .select('*, profiles!creator_id(full_name, avatar_url, phone_number, email_contact)')
-                .eq('type', 'online')
-                .eq('status', 'open')
-                .neq('creator_id', session.user.id)
-                .gt('deadline', new Date().toISOString());
+            let q = query(
+                collection(db, 'tasks'),
+                where('type', '==', 'online'),
+                where('status', '==', 'open'),
+                where('deadline', '>', new Date().toISOString())
+            );
 
-            // Apply Filters
-            if (activeFilter === 'newest') query = query.order('created_at', { ascending: false });
-            if (activeFilter === 'pay') query = query.order('amount', { ascending: false });
-            if (activeFilter === 'quick') {
-                query = query.eq('urgency', 'immediate').order('created_at', { ascending: false });
+            // Fetch tasks (Filters like 'newest', 'pay', 'quick' will be done client side due to Firestore composite index limits on ad-hoc queries,
+            // especially combining inequality 'deadline' with other sorts)
+            const querySnapshot = await getDocs(q);
+
+            // Step 3: Fetch Creator Profiles and map data
+            const profilesCache: Record<string, any> = {};
+            let rawTasks = [];
+
+            for (const docSnap of querySnapshot.docs) {
+                const task = { id: docSnap.id, ...docSnap.data() } as any;
+
+                // Exclude current user's tasks
+                if (task.creator_id === session.user.id) continue;
+
+                if (task.creator_id) {
+                    if (!profilesCache[task.creator_id]) {
+                        const pSnap = await getDoc(doc(db, 'profiles', task.creator_id));
+                        if (pSnap.exists()) {
+                            profilesCache[task.creator_id] = pSnap.data();
+                        }
+                    }
+                    task.profiles = profilesCache[task.creator_id] || {};
+                }
+                rawTasks.push(task);
             }
-            if (activeFilter === 'skills' && profileData?.skills && profileData.skills.length > 0) {
-                // If they have skills, filter where task requires at least one of their skills
-                // Supabase array overlap operator 'cd' or 'ov' for exact matches. Since tasks.skills is text[], we use contains/overlaps if supported.
-                // Assuming `skills` is text[], we use `.overlaps()`
-                query = query.overlaps('skills', profileData.skills);
+
+            // Apply Filters Client-Side
+            if (activeFilter === 'newest') {
+                rawTasks.sort((a, b) => {
+                    const aTime = a.created_at?.toMillis ? a.created_at.toMillis() : new Date(a.created_at || 0).getTime();
+                    const bTime = b.created_at?.toMillis ? b.created_at.toMillis() : new Date(b.created_at || 0).getTime();
+                    return bTime - aTime;
+                });
+            } else if (activeFilter === 'pay') {
+                rawTasks.sort((a, b) => b.amount - a.amount);
+            } else if (activeFilter === 'quick') {
+                rawTasks = rawTasks.filter(t => t.urgency === 'immediate');
+                rawTasks.sort((a, b) => {
+                    const aTime = a.created_at?.toMillis ? a.created_at.toMillis() : new Date(a.created_at || 0).getTime();
+                    const bTime = b.created_at?.toMillis ? b.created_at.toMillis() : new Date(b.created_at || 0).getTime();
+                    return bTime - aTime;
+                });
+            } else if (activeFilter === 'skills' && profileData?.skills && profileData.skills.length > 0) {
+                rawTasks = rawTasks.filter(t => {
+                    if (!t.skills || !Array.isArray(t.skills)) return false;
+                    return t.skills.some((s: string) => profileData.skills.includes(s));
+                });
             } else if (activeFilter === 'skills') {
-                // Fallback if no skills are set on profile
-                query = query.order('created_at', { ascending: false });
+                rawTasks.sort((a, b) => {
+                    const aTime = a.created_at?.toMillis ? a.created_at.toMillis() : new Date(a.created_at || 0).getTime();
+                    const bTime = b.created_at?.toMillis ? b.created_at.toMillis() : new Date(b.created_at || 0).getTime();
+                    return bTime - aTime;
+                });
             }
-
-            const { data: rawTasks, error } = await query;
-            if (error) throw error;
 
             const avMap = profileData?.availability || null;
             setAvailabilityMap(avMap);
 
-            let finalTasks = rawTasks || [];
+            let finalTasks = rawTasks;
             if (activeFilter === 'smart' && avMap) {
                 finalTasks = finalTasks.filter(task => checkAvailabilityMatch(task.date, task.time, avMap));
             }

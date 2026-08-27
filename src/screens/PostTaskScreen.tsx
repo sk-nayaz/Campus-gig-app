@@ -18,7 +18,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MapPin, Laptop, Zap, Users, Clock, Calendar } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 const CAMPUS_LOCATIONS = [
     'B-Block', 'C-Block', 'D-Block', 'E-Block', 'PG-Block',
@@ -97,12 +98,12 @@ export default function PostTaskScreen() {
                 max_bonus: maxBonus ? parseFloat(maxBonus) : null,
             };
 
-            // 3. Insert into Supabase
-            const { error } = await supabase
-                .from('tasks')
-                .insert([newTask]);
-
-            if (error) throw error;
+            // 3. Insert into Firestore
+            const tasksRef = collection(db, 'tasks');
+            await addDoc(tasksRef, {
+                ...newTask,
+                created_at: serverTimestamp()
+            });
 
             // 4. Success handling & Routing
             Alert.alert('Success!', 'Your task has been posted to the campus board.', [

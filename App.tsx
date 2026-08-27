@@ -30,7 +30,7 @@ const AppContent = () => {
     if (!session) {
         return (
             <NavigationContainer>
-                <Stack.Navigator screenOptions={{ headerShown: false }}>
+                <Stack.Navigator id="AuthStack" screenOptions={{ headerShown: false }}>
                     <Stack.Screen name="Auth" component={AuthScreen} />
                 </Stack.Navigator>
             </NavigationContainer>
@@ -40,7 +40,7 @@ const AppContent = () => {
     if (session && !isOnboarded) {
         return (
             <NavigationContainer>
-                <Stack.Navigator screenOptions={{ headerShown: false }}>
+                <Stack.Navigator id="OnboardingStack" screenOptions={{ headerShown: false }}>
                     <Stack.Screen name="Onboarding" component={OnboardingScreen} />
                 </Stack.Navigator>
             </NavigationContainer>
@@ -49,7 +49,7 @@ const AppContent = () => {
 
     return (
         <NavigationContainer>
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
+            <Stack.Navigator id="MainStack" screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="MainTabs" component={TabNavigator} />
                 <Stack.Screen
                     name="SkillHistory"

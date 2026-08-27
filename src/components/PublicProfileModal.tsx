@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { X, User as UserIcon, Star, CheckCircle2 } from 'lucide-react-native';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 interface PublicProfileModalProps {
     isVisible: boolean;
@@ -32,17 +33,11 @@ export default function PublicProfileModal({ isVisible, onClose, userId }: Publi
         const fetchProfile = async () => {
             setIsLoading(true);
             try {
-                const { data, error } = await supabase
-                    .from('profiles')
-                    .select('full_name, avatar_url, department, year, skills, rating, reviews_count')
-                    .eq('id', userId)
-                    .maybeSingle();
-
-                if (error) {
-                    console.error("Profile Fetch Error:", error);
-                    throw error;
+                const docSnap = await getDoc(doc(db, 'profiles', userId));
+                if (!docSnap.exists()) {
+                    throw new Error("Profile not found");
                 }
-                setProfile(data);
+                setProfile(docSnap.data());
             } catch (error) {
                 console.error('Error fetching public profile:', error);
             } finally {

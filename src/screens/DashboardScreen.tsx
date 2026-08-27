@@ -12,7 +12,7 @@ import {
     RefreshControl
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_DEFAULT } from '../components/MapComponent';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -27,9 +27,11 @@ import {
     Laptop,
     MapPin,
     ChevronLeft,
-    Clock
+    Clock,
+    Zap
 } from 'lucide-react-native';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { collection, query, where, getDocs, orderBy, getDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 
 const { width } = Dimensions.get('window');
@@ -56,35 +58,57 @@ export default function DashboardScreen() {
 
     const fetchLiveTasks = async () => {
         try {
-            let query = supabase
-                .from('tasks')
-                .select('*, profiles!creator_id(full_name, avatar_url, phone_number, email_contact)')
-                .eq('status', 'open')
-                .gt('deadline', new Date().toISOString())
-                .order('created_at', { ascending: false });
+            const today = new Date();
+            const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
+            const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999).toISOString();
 
-            // Ensure students don't see their own tasks
-            if (session?.user?.id) {
-                query = query.neq('creator_id', session.user.id);
+            const tasksRef = collection(db, 'tasks');
+            const q = query(
+                tasksRef,
+                where('status', '==', 'open'),
+                where('deadline', '>', new Date().toISOString()),
+                orderBy('deadline', 'asc') // Firestore requires equality filters before range filters in some cases, so we sort by deadline if we filter by it, or we fetch and sort client side. For now, fetch open tasks.
+            );
+
+            const querySnapshot = await getDocs(q);
+            let tasksData = [];
+
+            // Manually fetch creator profiles (N+1, but we can cache this later if needed, or it's fine for prototype)
+            const profilesCache: Record<string, any> = {};
+
+            for (const docSnap of querySnapshot.docs) {
+                const task = { id: docSnap.id, ...docSnap.data() } as any;
+
+                // Exclude current user's tasks
+                if (session?.user?.id && task.creator_id === session.user.id) continue;
+
+                if (task.creator_id) {
+                    if (!profilesCache[task.creator_id]) {
+                        const profileSnap = await getDoc(doc(db, 'profiles', task.creator_id));
+                        if (profileSnap.exists()) {
+                            profilesCache[task.creator_id] = profileSnap.data();
+                        }
+                    }
+                    task.profiles = profilesCache[task.creator_id] || {};
+                }
+                tasksData.push(task);
             }
 
-            const { data, error } = await query;
+            // Client-side sort by created_at desc as requested originally
+            tasksData.sort((a, b) => {
+                const aTime = a.created_at?.toMillis ? a.created_at.toMillis() : new Date(a.created_at || 0).getTime();
+                const bTime = b.created_at?.toMillis ? b.created_at.toMillis() : new Date(b.created_at || 0).getTime();
+                return bTime - aTime;
+            });
 
-            if (error) throw error;
+            const online = tasksData.filter(task => task.type === 'online');
+            const campus = tasksData.filter(task => task.type === 'on_campus');
 
-            if (data) {
-                const online = data.filter(task => task.type === 'online');
-                const campus = data.filter(task => task.type === 'on_campus');
-                const today = new Date();
-                const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
-                const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999).toISOString();
+            const urgent = tasksData.filter(t => t.deadline && t.deadline >= startOfDay && t.deadline <= endOfDay);
 
-                const urgent = data.filter(t => t.deadline && t.deadline >= startOfDay && t.deadline <= endOfDay);
-
-                setOnlineTasks(online);
-                setCampusTasks(campus);
-                setUrgentCount(urgent.length);
-            }
+            setOnlineTasks(online);
+            setCampusTasks(campus);
+            setUrgentCount(urgent.length);
         } catch (error: any) {
             console.error('Error fetching live tasks:', error.message);
         } finally {
