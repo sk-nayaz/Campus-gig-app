@@ -13,7 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronLeft, UserCircle2, CheckCircle2, Eye } from 'lucide-react-native';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { collection, query, where, getDocs, getDoc, doc, runTransaction } from 'firebase/firestore';
 import PublicProfileModal from '../components/PublicProfileModal';
 
 export default function ReviewApplicantsScreen() {
@@ -34,31 +35,29 @@ export default function ReviewApplicantsScreen() {
 
     const fetchApplicants = async () => {
         try {
-            const { data, error } = await supabase
-                .from('task_applications')
-                .select(`
-                    id, 
-                    applicant_id, 
-                    task_id,
-                    status,
-                    created_at, 
-                    profiles (
-                        id,
-                        full_name, 
-                        avatar_url, 
-                        department
-                    )
-                `)
-                .eq('task_id', taskId)
-                .eq('status', 'pending');
+            const q = query(
+                collection(db, 'task_applications'),
+                where('task_id', '==', taskId),
+                where('status', '==', 'pending')
+            );
 
-            if (error) {
-                console.error("Supabase Join Error:", error.message);
-                Alert.alert("Data Error", error.message);
-                throw error;
+            const querySnapshot = await getDocs(q);
+            const applicationsData = [];
+
+            for (const docSnap of querySnapshot.docs) {
+                const app = { id: docSnap.id, ...docSnap.data() } as any;
+
+                if (app.applicant_id) {
+                    const profileSnap = await getDoc(doc(db, 'profiles', app.applicant_id));
+                    if (profileSnap.exists()) {
+                        app.profiles = profileSnap.data();
+                        app.profiles.id = profileSnap.id;
+                    }
+                }
+                applicationsData.push(app);
             }
 
-            setApplicants(data || []);
+            setApplicants(applicationsData);
         } catch (error: any) {
             console.error('Error fetching applicants:', error);
             Alert.alert('Error', error.message || 'Could not load applicants.');
@@ -70,23 +69,28 @@ export default function ReviewApplicantsScreen() {
     const handleApprove = async (applicationId: string, applicantId: string) => {
         setIsApproving(applicationId);
         try {
-            // Step A: Update tasks table
-            const { error: taskError } = await supabase
-                .from('tasks')
-                .update({ assigned_to: applicantId, status: 'in_progress' })
-                .eq('id', taskId);
+            const taskRef = doc(db, 'tasks', taskId);
+            const appRef = doc(db, 'task_applications', applicationId);
 
-            if (taskError) throw taskError;
+            await runTransaction(db, async (transaction) => {
+                const taskDoc = await transaction.get(taskRef);
+                if (!taskDoc.exists()) {
+                    throw new Error("Task does not exist!");
+                }
 
-            // Step B: Update application status
-            const { error: appError } = await supabase
-                .from('task_applications')
-                .update({ status: 'accepted' })
-                .eq('id', applicationId);
+                if (taskDoc.data().assigned_to) {
+                    throw new Error("Task already assigned!");
+                }
 
-            if (appError) throw appError;
+                transaction.update(taskRef, {
+                    assigned_to: applicantId,
+                    status: 'in_progress'
+                });
 
-            // Step C: Success
+                transaction.update(appRef, {
+                    status: 'accepted'
+                });
+            });
             Alert.alert(
                 "Worker Approved!",
                 "They have been assigned to this task and notified.",
@@ -136,7 +140,7 @@ export default function ReviewApplicantsScreen() {
                         keyExtractor={(item) => item.id}
                         contentContainerStyle={styles.listContent}
                         renderItem={({ item }) => {
-                            // Supabase joins can sometimes return an array even for 1-to-1 if foreign keys aren't strictly defined
+                            // Joins can sometimes return an array even for 1-to-1
                             const profile = Array.isArray(item.profiles) ? item.profiles[0] : (item.profiles || {});
 
                             return (

@@ -15,7 +15,8 @@ import TaskCard, { TaskType } from '../components/TaskCard';
 type TabType = 'active' | 'review' | 'done';
 
 import { RefreshControl, ActivityIndicator } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { collection, query, where, getDocs, orderBy, getDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 export default function MyTasksScreen() {
     const { session } = useAuth();
@@ -32,31 +33,59 @@ export default function MyTasksScreen() {
     const fetchMyTasks = async () => {
         if (!session?.user?.id) return;
         try {
-            const [postedRes, assignedRes, appliedRes] = await Promise.all([
-                supabase
-                    .from('tasks')
-                    .select('*, profiles!creator_id(full_name, avatar_url, phone_number, email_contact)')
-                    .eq('creator_id', session.user.id)
-                    .order('created_at', { ascending: false }),
-                supabase
-                    .from('tasks')
-                    .select('*, profiles!creator_id(full_name, avatar_url, phone_number, email_contact)')
-                    .eq('assigned_to', session.user.id)
-                    .order('created_at', { ascending: false }),
-                supabase
-                    .from('task_applications')
-                    .select('*, tasks(*, profiles!creator_id(full_name, avatar_url, phone_number, email_contact))')
-                    .eq('applicant_id', session.user.id)
-                    .order('created_at', { ascending: false })
+            const profilesCache: Record<string, any> = {};
+
+            const getProfile = async (userId: string) => {
+                if (!userId) return {};
+                if (!profilesCache[userId]) {
+                    const snap = await getDoc(doc(db, 'profiles', userId));
+                    if (snap.exists()) {
+                        profilesCache[userId] = snap.data();
+                    }
+                }
+                return profilesCache[userId] || {};
+            };
+
+            const [postedSnap, assignedSnap, appliedSnap] = await Promise.all([
+                getDocs(query(collection(db, 'tasks'), where('creator_id', '==', session.user.id))),
+                getDocs(query(collection(db, 'tasks'), where('assigned_to', '==', session.user.id))),
+                getDocs(query(collection(db, 'task_applications'), where('applicant_id', '==', session.user.id)))
             ]);
 
-            if (postedRes.error) throw postedRes.error;
-            if (assignedRes.error) throw assignedRes.error;
-            if (appliedRes.error) throw appliedRes.error;
+            const postedData = await Promise.all(postedSnap.docs.map(async d => {
+                const t = { id: d.id, ...d.data() } as any;
+                t.profiles = await getProfile(t.creator_id);
+                return t;
+            }));
 
-            setPostedTasks(postedRes.data || []);
-            setAssignedTasks(assignedRes.data || []);
-            setAppliedTasks(appliedRes.data || []);
+            const assignedData = await Promise.all(assignedSnap.docs.map(async d => {
+                const t = { id: d.id, ...d.data() } as any;
+                t.profiles = await getProfile(t.creator_id);
+                return t;
+            }));
+
+            const appliedData = await Promise.all(appliedSnap.docs.map(async d => {
+                const app = { id: d.id, ...d.data() } as any;
+                if (app.task_id) {
+                    const tSnap = await getDoc(doc(db, 'tasks', app.task_id));
+                    if (tSnap.exists()) {
+                        app.tasks = { id: tSnap.id, ...tSnap.data() } as any;
+                        app.tasks.profiles = await getProfile(app.tasks.creator_id);
+                    }
+                }
+                return app;
+            }));
+
+            // Client-side sort by created_at desc
+            const sortByDate = (a: any, b: any) => {
+                const aTime = a.created_at?.toMillis ? a.created_at.toMillis() : new Date(a.created_at || 0).getTime();
+                const bTime = b.created_at?.toMillis ? b.created_at.toMillis() : new Date(b.created_at || 0).getTime();
+                return bTime - aTime;
+            };
+
+            setPostedTasks(postedData.sort(sortByDate));
+            setAssignedTasks(assignedData.sort(sortByDate));
+            setAppliedTasks(appliedData.sort(sortByDate));
 
         } catch (error: any) {
             console.error('Error fetching my tasks:', error.message);

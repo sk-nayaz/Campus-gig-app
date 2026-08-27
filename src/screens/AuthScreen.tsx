@@ -10,7 +10,9 @@ import {
     KeyboardAvoidingView,
     Platform
 } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../config/firebase';
 
 export default function AuthScreen() {
     const [isLogin, setIsLogin] = useState(true);
@@ -32,12 +34,7 @@ export default function AuthScreen() {
 
         try {
             if (isLogin) {
-                const { error } = await supabase.auth.signInWithPassword({
-                    email: email.trim(),
-                    password,
-                });
-
-                if (error) throw error;
+                await signInWithEmailAndPassword(auth, email.trim(), password);
             } else {
                 const lowerEmail = email.trim().toLowerCase();
                 if (!lowerEmail.endsWith('@vnrvjiet.in')) {
@@ -46,34 +43,29 @@ export default function AuthScreen() {
                     return;
                 }
 
-                const { data, error } = await supabase.auth.signUp({
-                    email: lowerEmail,
-                    password,
-                });
+                const userCredential = await createUserWithEmailAndPassword(auth, lowerEmail, password);
 
-                if (error) throw error;
-
-                if (data?.user) {
-                    const { error: profileError } = await supabase
-                        .from('profiles')
-                        .insert([
-                            {
-                                id: data.user.id,
-                                role: 'student',
-                                live_status: true,
-                            }
-                        ]);
-
-                    if (profileError) {
+                if (userCredential.user) {
+                    try {
+                        await setDoc(doc(db, 'profiles', userCredential.user.uid), {
+                            role: 'student',
+                            live_status: true,
+                            onboarded: false
+                        });
+                        Alert.alert('Success', 'Account created successfully!');
+                    } catch (profileError) {
                         console.error('Profile creation error:', profileError);
                         Alert.alert('Notice', 'User created, but profile initialization failed.');
-                    } else {
-                        Alert.alert('Success', 'Account created successfully!');
                     }
                 }
             }
         } catch (error: any) {
-            Alert.alert('Error', error.message || 'An unexpected error occurred');
+            let errorMsg = error.message;
+            if (error.code === 'auth/email-already-in-use') errorMsg = 'Email is already registered.';
+            if (error.code === 'auth/wrong-password') errorMsg = 'Invalid email or password.';
+            if (error.code === 'auth/user-not-found') errorMsg = 'Invalid email or password.';
+            if (error.code === 'auth/weak-password') errorMsg = 'Password should be at least 6 characters.';
+            Alert.alert('Error', errorMsg);
         } finally {
             setLoading(false);
         }

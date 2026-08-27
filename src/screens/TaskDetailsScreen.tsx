@@ -5,7 +5,8 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import { ChevronLeft, MapPin, Clock, ShieldCheck, Zap, Laptop, Star } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 
 export default function TaskDetailsScreen() {
@@ -19,14 +20,22 @@ export default function TaskDetailsScreen() {
 
     const fetchTaskDetails = async () => {
         try {
-            const { data, error } = await supabase
-                .from('tasks')
-                .select('*, profiles!creator_id(full_name, avatar_url, phone_number, email_contact)')
-                .eq('id', taskId)
-                .single();
+            const docSnap = await getDoc(doc(db, 'tasks', taskId));
 
-            if (error) throw error;
-            setTask(data);
+            if (!docSnap.exists()) {
+                throw new Error("Task not found");
+            }
+
+            const taskData = { id: docSnap.id, ...docSnap.data() } as any;
+
+            if (taskData.creator_id) {
+                const profileSnap = await getDoc(doc(db, 'profiles', taskData.creator_id));
+                if (profileSnap.exists()) {
+                    taskData.profiles = profileSnap.data();
+                }
+            }
+
+            setTask(taskData);
         } catch (error: any) {
             console.error('Error fetching task details:', error.message);
         } finally {

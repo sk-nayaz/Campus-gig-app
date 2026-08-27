@@ -15,7 +15,8 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { X, ExternalLink, Plus, Trophy, BriefcaseBusiness } from 'lucide-react-native';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { collection, query, where, getDocs, orderBy, addDoc } from 'firebase/firestore';
 
 type Achievement = {
     id: string;
@@ -61,20 +62,20 @@ export default function AchievementModal({
     const fetchAchievements = async () => {
         setIsLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('achievements')
-                .select('*')
-                .eq('user_id', userId)
-                .eq('skill', skill)
-                .order('created_at', { ascending: false });
+            const q = query(
+                collection(db, 'achievements'),
+                where('user_id', '==', userId),
+                where('skill', '==', skill),
+                orderBy('created_at', 'desc')
+            );
+            const querySnapshot = await getDocs(q);
 
-            if (error) {
-                // If the table doesn't exist yet, this will gracefully fail as an empty array
-                console.error("Fetch achievements error: ", error.message);
-                setAchievements([]);
-            } else {
-                setAchievements(data || []);
-            }
+            const fetched = querySnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })) as Achievement[];
+
+            setAchievements(fetched);
         } catch (error) {
             console.error(error);
         } finally {
@@ -96,17 +97,14 @@ export default function AchievementModal({
 
         setIsSubmitting(true);
         try {
-            const { error } = await supabase.from('achievements').insert([
-                {
-                    user_id: userId,
-                    skill: skill,
-                    title: title.trim(),
-                    description: description.trim(),
-                    link: link.trim() || null,
-                }
-            ]);
-
-            if (error) throw error;
+            await addDoc(collection(db, 'achievements'), {
+                user_id: userId,
+                skill: skill,
+                title: title.trim(),
+                description: description.trim(),
+                link: link.trim() || null,
+                created_at: new Date().toISOString()
+            });
 
             setIsWriting(false);
             resetForm();

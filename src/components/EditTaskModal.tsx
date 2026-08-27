@@ -13,7 +13,8 @@ import {
     ActivityIndicator
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 import { TaskType } from './TaskCard';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Calendar } from 'lucide-react-native';
@@ -69,12 +70,7 @@ export default function EditTaskModal({ isVisible, onClose, task, onTaskUpdated 
                 deadline: deadlineDate.toISOString()
             };
 
-            const { error } = await supabase
-                .from('tasks')
-                .update(updates)
-                .eq('id', task.id);
-
-            if (error) throw error;
+            await updateDoc(doc(db, 'tasks', task.id), updates);
 
             onTaskUpdated({ ...task, ...updates });
             Alert.alert('Success', 'Task updated successfully.');

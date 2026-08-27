@@ -17,7 +17,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { ChevronRight, ChevronLeft, GraduationCap, Clock, CheckCircle2, User, Sparkles } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
@@ -84,21 +85,17 @@ export default function OnboardingScreen({ navigation }: any) {
         setIsSubmitting(true);
 
         try {
-            const { error } = await supabase
-                .from('profiles')
-                .update({
-                    full_name: fullName.trim(),
-                    age: parseInt(age),
-                    email_contact: email.trim(),
-                    phone_number: phone.trim(),
-                    year: year,
-                    department: department,
-                    skills: selectedSkills,
-                    onboarded: true
-                })
-                .eq('id', session.user.id);
-
-            if (error) throw error;
+            const docRef = doc(db, 'profiles', session.user.id);
+            await updateDoc(docRef, {
+                full_name: fullName.trim(),
+                age: parseInt(age),
+                email_contact: email.trim(),
+                phone_number: phone.trim(),
+                year: year,
+                department: department,
+                skills: selectedSkills,
+                onboarded: true
+            });
 
             // Trigger AuthContext to instantly unlock the app
             setIsOnboarded(true);

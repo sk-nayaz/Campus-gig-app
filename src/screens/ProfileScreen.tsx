@@ -33,7 +33,8 @@ import {
     Edit2
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { doc, getDoc, updateDoc, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import AchievementModal from '../components/AchievementModal';
 
 const { width } = Dimensions.get('window');
@@ -89,26 +90,44 @@ export default function ProfileScreen() {
     const fetchProfileData = async () => {
         if (!session?.user?.id) return;
         try {
-            const [profileRes, reviewsRes] = await Promise.all([
-                supabase.from('profiles').select('*').eq('id', session.user.id).single(),
-                supabase.from('reviews').select('id, rating, comment, tasks(title)').eq('reviewee_id', session.user.id).order('created_at', { ascending: false })
-            ]);
+            const profileRef = doc(db, 'profiles', session.user.id);
+            const profileSnap = await getDoc(profileRef);
 
-            if (profileRes.error) throw profileRes.error;
-            const data = profileRes.data;
+            if (!profileSnap.exists()) throw new Error("Profile not found");
+            const data = profileSnap.data();
             setUserData(data);
             setIsLive(!!data.live_status);
 
             const userAvailability = data.availability || MOCK_DATA.heatmap;
             setEditForm(prev => ({ ...prev, availability: userAvailability }));
 
-            if (reviewsRes.data) {
-                setRecentReviews(reviewsRes.data.slice(0, 3));
-                setTotalReviews(reviewsRes.data.length);
-                if (reviewsRes.data.length > 0) {
-                    const sum = reviewsRes.data.reduce((acc, r) => acc + r.rating, 0);
-                    setAvgRating((sum / reviewsRes.data.length).toFixed(1));
+            // Fetch reviews
+            const reviewsQuery = query(
+                collection(db, 'reviews'),
+                where('reviewee_id', '==', session.user.id),
+                orderBy('created_at', 'desc')
+            );
+            const reviewsSnap = await getDocs(reviewsQuery);
+
+            const reviewsData = [];
+            for (const reviewDoc of reviewsSnap.docs) {
+                const reviewInfo = { id: reviewDoc.id, ...reviewDoc.data() } as any;
+                // Fetch the task title
+                if (reviewInfo.task_id) {
+                    const taskRef = doc(db, 'tasks', reviewInfo.task_id);
+                    const taskSnap = await getDoc(taskRef);
+                    if (taskSnap.exists()) {
+                        reviewInfo.tasks = { title: taskSnap.data().title };
+                    }
                 }
+                reviewsData.push(reviewInfo);
+            }
+
+            if (reviewsData.length > 0) {
+                setRecentReviews(reviewsData.slice(0, 3));
+                setTotalReviews(reviewsData.length);
+                const sum = reviewsData.reduce((acc, r) => acc + r.rating, 0);
+                setAvgRating((sum / reviewsData.length).toFixed(1));
             }
 
         } catch (error: any) {
@@ -127,8 +146,8 @@ export default function ProfileScreen() {
         setIsLive(newValue);
         setIsUpdating(true);
         try {
-            const { error } = await supabase.from('profiles').update({ live_status: newValue }).eq('id', session.user.id);
-            if (error) throw error;
+            const profileRef = doc(db, 'profiles', session.user.id);
+            await updateDoc(profileRef, { live_status: newValue });
         } catch (error: any) {
             setIsLive(!newValue);
             Alert.alert('Update Failed', error.message);
@@ -177,8 +196,8 @@ export default function ProfileScreen() {
                 availability: editForm.availability
             };
 
-            const { error } = await supabase.from('profiles').update(updates).eq('id', session.user.id);
-            if (error) throw error;
+            const profileRef = doc(db, 'profiles', session.user.id);
+            await updateDoc(profileRef, updates);
 
             setUserData({ ...userData, ...updates });
             setIsEditModalVisible(false);

@@ -4,12 +4,12 @@
 CampusGig is a real-time, cross-platform gig economy app designed to connect students who need quick tasks done with peers looking to earn extra rewards. From grabbing a printout at SAC to finding a coding tutor, CampusGig makes campus life more efficient.
 
 
-> "We didn't just build a mobile app; we built a unified cross-platform ecosystem. By utilizing React Native Web and Supabase, our codebase simultaneously compiles to Android, iOS, and the Web, ensuring every student at VNRVJIET can access the marketplace regardless of what device they own."
+> "We didn't just build a mobile app; we built a unified cross-platform ecosystem. By utilizing React Native Web and Firebase, our codebase simultaneously compiles to Android, iOS, and the Web, ensuring every student at VNRVJIET can access the marketplace regardless of what device they own."
 > 
 ## 🛠️ Tech Stack
 * **Frontend:** React Native (Expo) & NativeWind (Tailwind CSS)
 * **Web Support:** React Native Web
-* **Backend:** Supabase (PostgreSQL, Auth, Real-time)
+* **Backend:** Firebase (Firestore, Auth, Real-time)
 * **Deployment:** EAS (Android APK) & Netlify (Web Version)
 * **Iconography:** Lucide-React-Native
 
@@ -26,7 +26,7 @@ CampusGig is a real-time, cross-platform gig economy app designed to connect stu
 * **Online (Remote Skills):** Skill-based tasks like debugging code or graphic design, appearing in a dedicated Grid View.
 
 ### ⚡ Performance & Logic
-* **Instant:** The "Available Now" feed, powered by **Supabase Real-time**, for urgent tasks needing completion in 1-2 hours.
+* **Instant:** The "Available Now" feed, powered by **Firestore Real-time**, for urgent tasks needing completion in 1-2 hours.
 * **Feasible:** A general list for time-insensitive tasks that students can browse and fit into their schedules.
 
 ---
@@ -47,7 +47,7 @@ Visit our live site at: [campus-gig-webathon.netlify.app](https://campus-gig-web
 
 | Name | Role | Core Contributions |
 | :--- | :--- | :--- |
-| **A Revanth** | **Team Leader** | Full-stack architecture, Supabase integration, EAS Android builds, and Web deployment. |
+| **A Revanth** | **Team Leader** | Full-stack architecture, Firebase integration, EAS Android builds, and Web deployment. |
 | **U Srivalli pinakapani** | **Quality & Testing** | Bug fixing, dependency management, and documentation. |
 | **Sk Nayaz Ahmed** | **UI/UX & Frontend** | Figma design, NativeWind styling, and Dashboard/Profile screen implementation. |
 | **M Sri Varsha** | **Backend & Logic** | SQL schema, Row Level Security (RLS) rules, and real-time task logic. |

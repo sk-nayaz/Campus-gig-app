@@ -5,7 +5,8 @@ import { useRoute } from '@react-navigation/native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Star, MessageSquare } from 'lucide-react-native';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { collection, query, where, orderBy, getDocs, getDoc, doc } from 'firebase/firestore';
 
 type Review = {
     id: string;
@@ -28,22 +29,30 @@ export default function SkillHistoryScreen() {
 
     const fetchSkillHistory = async () => {
         try {
-            // Assuming tasks title can be fetched if it's a join, otherwise just the comment from reviews
-            const { data, error } = await supabase
-                .from('reviews')
-                .select(`
-          id,
-          rating,
-          comment,
-          created_at,
-          tasks ( title )
-        `)
-                .eq('reviewee_id', userId)
-                .eq('skill_tag', skill)
-                .order('created_at', { ascending: false });
+            const q = query(
+                collection(db, 'reviews'),
+                where('reviewee_id', '==', userId),
+                where('skill_tag', '==', skill),
+                orderBy('created_at', 'desc')
+            );
 
-            if (error) throw error;
-            setReviews(data || []);
+            const querySnapshot = await getDocs(q);
+            const reviewsData = [];
+
+            for (const docSnap of querySnapshot.docs) {
+                const data = docSnap.data();
+                const review = { id: docSnap.id, ...data } as any;
+
+                if (data.task_id) {
+                    const taskSnap = await getDoc(doc(db, 'tasks', data.task_id));
+                    if (taskSnap.exists()) {
+                        review.tasks = { title: taskSnap.data().title };
+                    }
+                }
+                reviewsData.push(review);
+            }
+
+            setReviews(reviewsData);
         } catch (error: any) {
             console.error('Error fetching skill history:', error.message);
         } finally {

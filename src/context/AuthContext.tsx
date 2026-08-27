@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Session } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { User, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../config/firebase';
 
 export type Profile = {
     id: string;
@@ -12,6 +13,14 @@ export type Profile = {
     department?: string;
     skills?: string[];
     onboarded?: boolean;
+    avatar_url?: string;
+    phone_number?: string;
+    email_contact?: string;
+};
+
+// Map Firebase User to Session for backward compatibility in the app
+export type Session = {
+    user: User & { id?: string };
 };
 
 type AuthContextType = {
@@ -35,30 +44,32 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [isOnboarded, setIsOnboarded] = useState(false);
     const [loading, setLoading] = useState(true);
 
-    const checkUser = async (currentSession: Session | null) => {
-        if (!currentSession) {
+    const checkUser = async (user: User | null) => {
+        if (!user) {
             setSession(null);
             setIsOnboarded(false);
             setLoading(false);
             return;
         }
 
-        setSession(currentSession);
+        // Add id property for backward compatibility with older session.user.id
+        const sessionUser = user as User & { id?: string };
+        sessionUser.id = user.uid;
+
+        setSession({ user: sessionUser });
 
         try {
-            const { data, error } = await supabase
-                .from('profiles')
-                .select('onboarded')
-                .eq('id', currentSession.user.id)
-                .single();
+            const docRef = doc(db, 'profiles', user.uid);
+            const docSnap = await getDoc(docRef);
 
-            if (error && error.code !== 'PGRST116') {
-                console.error('Error fetching profile status:', error);
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                setIsOnboarded(data?.onboarded === true);
+            } else {
+                setIsOnboarded(false);
             }
-
-            setIsOnboarded(data?.onboarded === true);
         } catch (error) {
-            console.error(error);
+            console.error('Error fetching profile status:', error);
             setIsOnboarded(false);
         } finally {
             setLoading(false);
@@ -66,24 +77,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            checkUser(session);
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            setLoading(true); // Lock the UI during transition
+            checkUser(user);
         });
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            (_event, newSession) => {
-                setLoading(true); // Lock the UI during transition
-                checkUser(newSession);
-            }
-        );
-
         return () => {
-            subscription.unsubscribe();
+            unsubscribe();
         };
     }, []);
 
     const signOut = async () => {
-        await supabase.auth.signOut();
+        try {
+            await firebaseSignOut(auth);
+        } catch (error) {
+            console.error('Error signing out:', error);
+        }
     };
 
     return (

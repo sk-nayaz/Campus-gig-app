@@ -13,7 +13,8 @@ import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronLeft, Zap } from 'lucide-react-native';
 import TaskCard from '../components/TaskCard';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { collection, query, where, onSnapshot, getDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 
 export default function AsapTasksScreen() {
@@ -21,46 +22,58 @@ export default function AsapTasksScreen() {
     const { session } = useAuth();
     const [tasks, setTasks] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-
-    const fetchAsapTasks = async () => {
-        try {
-            const today = new Date();
-            const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
-            const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999).toISOString();
-
-            let query = supabase
-                .from('tasks')
-                .select('*, profiles!creator_id(full_name, avatar_url, phone_number, email_contact)')
-                .eq('status', 'open')
-                .gte('deadline', startOfDay)
-                .lte('deadline', endOfDay)
-                .order('deadline', { ascending: true });
-
-            if (session?.user?.id) {
-                query = query.neq('creator_id', session.user.id);
-            }
-
-            const { data, error } = await query;
-
-            if (error) throw error;
-            setTasks(data || []);
-        } catch (error: any) {
-            console.error('Error fetching ASAP tasks:', error.message);
-        } finally {
-            setIsLoading(false);
-            setRefreshing(false);
-        }
-    };
 
     useEffect(() => {
-        fetchAsapTasks();
-    }, []);
+        const today = new Date();
+        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
+        const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999).toISOString();
 
-    const onRefresh = useCallback(() => {
-        setRefreshing(true);
-        fetchAsapTasks();
-    }, []);
+        const q = query(
+            collection(db, 'tasks'),
+            where('status', '==', 'open'),
+            where('deadline', '>=', startOfDay),
+            where('deadline', '<=', endOfDay)
+        );
+
+        // Client-side profile cache to avoid redundant reads
+        const profilesCache: Record<string, any> = {};
+
+        const unsubscribe = onSnapshot(q, async (querySnapshot) => {
+            const tasksPromises = querySnapshot.docs.map(async (docSnap) => {
+                const task = { id: docSnap.id, ...docSnap.data() } as any;
+
+                if (task.creator_id) {
+                    if (!profilesCache[task.creator_id]) {
+                        const profileSnap = await getDoc(doc(db, 'profiles', task.creator_id));
+                        if (profileSnap.exists()) {
+                            profilesCache[task.creator_id] = profileSnap.data();
+                        }
+                    }
+                    task.profiles = profilesCache[task.creator_id] || {};
+                }
+                return task;
+            });
+
+            const resolvedTasks = await Promise.all(tasksPromises);
+
+            // Filter out own tasks and sort client-side
+            const filteredTasks = resolvedTasks
+                .filter(t => !session?.user?.id || t.creator_id !== session.user.id)
+                .sort((a, b) => {
+                    const aDeadline = new Date(a.deadline).getTime();
+                    const bDeadline = new Date(b.deadline).getTime();
+                    return aDeadline - bDeadline;
+                });
+
+            setTasks(filteredTasks);
+            setIsLoading(false);
+        }, (error) => {
+            console.error('Realtime tasks error:', error);
+            setIsLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, [session?.user?.id]);
 
     return (
         <View style={styles.container}>
@@ -97,9 +110,6 @@ export default function AsapTasksScreen() {
                         renderItem={({ item }) => <TaskCard task={item} showActionButton={true} />}
                         contentContainerStyle={styles.listContent}
                         showsVerticalScrollIndicator={false}
-                        refreshControl={
-                            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" />
-                        }
                     />
                 )}
             </SafeAreaView>

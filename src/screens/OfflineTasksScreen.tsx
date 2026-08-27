@@ -34,7 +34,8 @@ const CAMPUS_NODES = [
 ];
 
 import { RefreshControl, ActivityIndicator } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { db } from '../config/firebase';
+import { collection, query, where, getDocs, orderBy, getDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { checkAvailabilityMatch } from '../utils/timeHelpers';
 
@@ -55,27 +56,46 @@ export default function OfflineTasksScreen() {
 
     const fetchOfflineTasks = async () => {
         try {
-            let query = supabase
-                .from('tasks')
-                .select('*, profiles!creator_id(full_name, avatar_url, phone_number, email_contact)')
-                .eq('type', 'on_campus')
-                .eq('status', 'open')
-                .gt('deadline', new Date().toISOString())
-                .order('created_at', { ascending: false });
+            const q = query(
+                collection(db, 'tasks'),
+                where('type', '==', 'on_campus'),
+                where('status', '==', 'open'),
+                where('deadline', '>', new Date().toISOString())
+            );
 
-            if (session?.user?.id) {
-                query = query.neq('creator_id', session.user.id);
-            }
-
-            const [tasksRes, profileRes] = await Promise.all([
-                query,
-                supabase.from('profiles').select('availability').eq('id', session?.user?.id).single()
+            const [tasksSnap, profileSnap] = await Promise.all([
+                getDocs(q),
+                getDoc(doc(db, 'profiles', session?.user?.id || 'none'))
             ]);
 
-            if (tasksRes.error) throw tasksRes.error;
+            const profilesCache: Record<string, any> = {};
+            let rawTasks = [];
 
-            const rawTasks = tasksRes.data || [];
-            const availabilityMap = profileRes.data?.availability;
+            for (const docSnap of tasksSnap.docs) {
+                const task = { id: docSnap.id, ...docSnap.data() } as any;
+
+                // Exclude current user's tasks
+                if (session?.user?.id && task.creator_id === session.user.id) continue;
+
+                if (task.creator_id) {
+                    if (!profilesCache[task.creator_id]) {
+                        const pSnap = await getDoc(doc(db, 'profiles', task.creator_id));
+                        if (pSnap.exists()) {
+                            profilesCache[task.creator_id] = pSnap.data();
+                        }
+                    }
+                    task.profiles = profilesCache[task.creator_id] || {};
+                }
+                rawTasks.push(task);
+            }
+
+            rawTasks.sort((a, b) => {
+                const aTime = a.created_at?.toMillis ? a.created_at.toMillis() : new Date(a.created_at || 0).getTime();
+                const bTime = b.created_at?.toMillis ? b.created_at.toMillis() : new Date(b.created_at || 0).getTime();
+                return bTime - aTime;
+            });
+
+            const availabilityMap = profileSnap.exists() ? profileSnap.data().availability : null;
 
             const matchedTasks = rawTasks.filter(task =>
                 checkAvailabilityMatch(task.date, task.time, availabilityMap)
