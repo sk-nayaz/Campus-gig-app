@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+
 import {
     View,
     Text,
     StyleSheet,
     TextInput,
     TouchableOpacity,
+    Pressable,
     ScrollView,
     KeyboardAvoidingView,
     Platform,
@@ -54,83 +55,127 @@ export default function PostTaskScreen() {
     const handlePostTask = async () => {
         // 1. Validation
         if (!title.trim() || !description.trim() || !amount.trim()) {
-            Alert.alert('Missing Fields', 'Please fill in the title, description, and compensation amount.');
+            Alert.alert(
+                'Missing Fields',
+                'Please fill in the title, description, and compensation amount.'
+            );
             return;
         }
 
         const parsedAmount = parseFloat(amount);
         if (isNaN(parsedAmount) || parsedAmount <= 0) {
-            Alert.alert('Invalid Amount', 'Please enter a valid monetary amount greater than 0.');
+            Alert.alert(
+                'Invalid Amount',
+                'Please enter a valid monetary amount greater than 0.'
+            );
             return;
         }
 
         if (type === 'on_campus' && !location.trim()) {
-            Alert.alert('Missing Location', 'Please specify a campus location.');
+            Alert.alert(
+                'Missing Location',
+                'Please specify a campus location.'
+            );
             return;
         }
 
         if (!session?.user?.id) {
-            Alert.alert('Not Authenticated', 'You must be logged in to post a task.');
+            Alert.alert(
+                'Not Authenticated',
+                'You must be logged in to post a task.'
+            );
             return;
         }
 
         setIsSubmitting(true);
 
         try {
-            // 2. Prepare Data
-            const skillsArray = type === 'online' && skills.length > 0
-                ? skills
-                : null;
+            // 2. Prepare Firestore-safe data
+            const skillsArray =
+                type === 'online' && skills.length > 0 ? skills : null;
 
             const newTask = {
                 creator_id: session.user.id,
                 title: title.trim(),
                 description: description.trim(),
                 amount: parsedAmount,
-                type: type,
-                verification: verification,
+                type,
+                verification,
                 location: type === 'on_campus' ? location.trim() : null,
                 skills: type === 'online' ? skillsArray : null,
                 deadline: deadlineDate.toISOString(),
                 status: 'open',
-                urgency: urgency,
-                min_bonus: minBonus ? parseFloat(minBonus) : null,
-                max_bonus: maxBonus ? parseFloat(maxBonus) : null,
+                urgency,
+                min_bonus: minBonus.trim()
+                    ? parseFloat(minBonus)
+                    : null,
+                max_bonus: maxBonus.trim()
+                    ? parseFloat(maxBonus)
+                    : null,
             };
 
             // 3. Insert into Firestore
             const tasksRef = collection(db, 'tasks');
-            await addDoc(tasksRef, {
+
+            const taskDoc = await addDoc(tasksRef, {
                 ...newTask,
-                created_at: serverTimestamp()
+                created_at: serverTimestamp(),
             });
 
-            // 4. Success handling & Routing
-            Alert.alert('Success!', 'Your task has been posted to the campus board.', [
-                {
-                    text: 'Awesome',
-                    onPress: () => {
-                        // Reset form
-                        setTitle('');
-                        setDescription('');
-                        setAmount('');
-                        setType('on_campus');
-                        setVerification('instant');
-                        setLocation('');
-                        setSkills([]);
-                        setUrgency('feasible');
-                        setDeadlineDate(new Date());
-                        setMinBonus('');
-                        setMaxBonus('');
-                        // Route back
-                        navigation.navigate('Dashboard');
-                    }
-                }
-            ]);
+            // 4. Success handling
+            const successMessage =
+                'Your task has been posted to the campus board.';
 
+            if (Platform.OS === 'web') {
+                window.alert(`Success!\n\n${successMessage}`);
+
+                // Reset form
+                setTitle('');
+                setDescription('');
+                setAmount('');
+                setType('on_campus');
+                setVerification('instant');
+                setLocation(CAMPUS_LOCATIONS[0]);
+                setSkills([]);
+                setUrgency('feasible');
+                setDeadlineDate(new Date());
+                setMinBonus('');
+                setMaxBonus('');
+
+                navigation.navigate('Dashboard');
+            } else {
+                Alert.alert('Success!', successMessage, [
+                    {
+                        text: 'Awesome',
+                        onPress: () => {
+                            // Reset form
+                            setTitle('');
+                            setDescription('');
+                            setAmount('');
+                            setType('on_campus');
+                            setVerification('instant');
+                            setLocation(CAMPUS_LOCATIONS[0]);
+                            setSkills([]);
+                            setUrgency('feasible');
+                            setDeadlineDate(new Date());
+                            setMinBonus('');
+                            setMaxBonus('');
+
+                            navigation.navigate('Dashboard');
+                        },
+                    },
+                ]);
+            }
         } catch (error: any) {
-            console.error('Post task error:', error);
-            Alert.alert('Error', error.message || 'Could not post the task. Please try again.');
+            const message =
+                error?.message ||
+                'Could not post the task. Please try again.';
+
+            if (Platform.OS === 'web') {
+                window.alert(`Post Task Failed\n\n${message}`);
+            } else {
+                Alert.alert('Error', message);
+            }
         } finally {
             setIsSubmitting(false);
         }
@@ -529,18 +574,25 @@ export default function PostTaskScreen() {
                         </BlurView>
 
                         {/* Submit Button */}
-                        <TouchableOpacity
-                            style={styles.submitButton}
-                            onPress={handlePostTask}
+                        <Pressable
+                            style={({ pressed }) => [
+                                styles.submitButton,
+                                pressed && !isSubmitting && styles.submitButtonPressed,
+                                isSubmitting && styles.submitButtonDisabled,
+                            ]}
+                            onPress={() => {
+                                void handlePostTask();
+                            }}
                             disabled={isSubmitting}
-                            activeOpacity={0.8}
                         >
                             {isSubmitting ? (
                                 <ActivityIndicator color="#FFFFFF" />
                             ) : (
-                                <Text style={styles.submitButtonText}>Post Task to Board</Text>
+                                <Text style={styles.submitButtonText}>
+                                    Post Task to Board
+                                </Text>
                             )}
-                        </TouchableOpacity>
+                        </Pressable>
 
                     </ScrollView>
                 </KeyboardAvoidingView>
@@ -671,6 +723,15 @@ const styles = StyleSheet.create({
         shadowRadius: 16,
         elevation: 10,
     },
+    submitButtonPressed: {
+        opacity: 0.75,
+        transform: [{ scale: 0.99 }],
+    },
+
+    submitButtonDisabled: {
+        opacity: 0.7,
+    },
+
     submitButtonText: {
         color: '#FFFFFF',
         fontSize: 18,
