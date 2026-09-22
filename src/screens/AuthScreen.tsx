@@ -25,51 +25,102 @@ export default function AuthScreen() {
     };
 
     const handleAuth = async () => {
-        if (!email || !password) {
-            Alert.alert('Error', 'Please enter both email and password.');
-            return;
-        }
+    if (!email.trim() || !password) {
+        Alert.alert('Error', 'Please enter both email and password.');
+        return;
+    }
 
-        setLoading(true);
+    setLoading(true);
 
-        try {
-            if (isLogin) {
-                await signInWithEmailAndPassword(auth, email.trim(), password);
-            } else {
-                const lowerEmail = email.trim().toLowerCase();
-                if (!lowerEmail.endsWith('@vnrvjiet.in')) {
-                    Alert.alert('Access Denied 🛑', 'Only @vnrvjiet.in college emails are allowed to join CampusGig.');
-                    setLoading(false);
-                    return;
-                }
+    try {
+        if (isLogin) {
+            await signInWithEmailAndPassword(
+                auth,
+                email.trim(),
+                password
+            );
+        } else {
+            const lowerEmail = email.trim().toLowerCase();
 
-                const userCredential = await createUserWithEmailAndPassword(auth, lowerEmail, password);
+            if (!lowerEmail.endsWith('@vnrvjiet.in')) {
+                Alert.alert(
+                    'Access Denied 🛑',
+                    'Only @vnrvjiet.in college emails are allowed to join CampusGig.'
+                );
+                return;
+            }
 
-                if (userCredential.user) {
-                    try {
-                        await setDoc(doc(db, 'profiles', userCredential.user.uid), {
+            const userCredential =
+                await createUserWithEmailAndPassword(
+                    auth,
+                    lowerEmail,
+                    password
+                );
+
+            if (userCredential.user) {
+                try {
+                    await setDoc(
+                        doc(
+                            db,
+                            'profiles',
+                            userCredential.user.uid
+                        ),
+                        {
                             role: 'student',
                             live_status: true,
                             onboarded: false
-                        });
-                        Alert.alert('Success', 'Account created successfully!');
-                    } catch (profileError) {
-                        console.error('Profile creation error:', profileError);
-                        Alert.alert('Notice', 'User created, but profile initialization failed.');
-                    }
+                        }
+                    );
+
+                    Alert.alert(
+                        'Success',
+                        'Account created successfully!'
+                    );
+                } catch (profileError) {
+                    console.error(
+                        'Profile creation error:',
+                        profileError
+                    );
+
+                    Alert.alert(
+                        'Notice',
+                        'User created, but profile initialization failed.'
+                    );
                 }
             }
-        } catch (error: any) {
-            let errorMsg = error.message;
-            if (error.code === 'auth/email-already-in-use') errorMsg = 'Email is already registered.';
-            if (error.code === 'auth/wrong-password') errorMsg = 'Invalid email or password.';
-            if (error.code === 'auth/user-not-found') errorMsg = 'Invalid email or password.';
-            if (error.code === 'auth/weak-password') errorMsg = 'Password should be at least 6 characters.';
-            Alert.alert('Error', errorMsg);
-        } finally {
-            setLoading(false);
         }
-    };
+    } catch (error: any) {
+        let errorMsg =
+            'Something went wrong. Please try again.';
+
+        if (
+            error?.code === 'auth/invalid-credential' ||
+            error?.code === 'auth/wrong-password' ||
+            error?.code === 'auth/user-not-found'
+        ) {
+            errorMsg = 'Incorrect email or password.';
+        } else if (error?.code === 'auth/invalid-email') {
+            errorMsg = 'Please enter a valid email address.';
+        } else if (
+            error?.code === 'auth/too-many-requests'
+        ) {
+            errorMsg =
+                'Too many failed attempts. Please try again later.';
+        } else if (
+            error?.code === 'auth/network-request-failed'
+        ) {
+            errorMsg =
+                'Network error. Please check your internet connection.';
+        }
+
+        Alert.alert(
+            isLogin ? 'Sign In Failed' : 'Sign Up Failed',
+            errorMsg
+        );
+    } finally {
+        setLoading(false);
+    }
+};
 
     return (
         <KeyboardAvoidingView
