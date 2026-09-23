@@ -9,6 +9,7 @@ import EditTaskModal from './EditTaskModal';
 import { useAuth } from '../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import FeedbackModal from './FeedbackModal';
+import { createNotification } from '../utils/notifications';
 
 export interface TaskType {
     id: string;
@@ -209,8 +210,17 @@ export default function TaskCard({
             await addDoc(collection(db, 'task_applications'), {
                 task_id: task.id,
                 applicant_id: session.user.id,
+                status: 'pending',
                 created_at: new Date().toISOString()
             });
+
+            await createNotification(
+                task.creator_id,
+                'New Application ⭐',
+                `Someone applied for "${task.title}".`,
+                'application',
+                task.id
+            );
 
             setHasApplied(true);
             Alert.alert('Application Sent! ⭐', 'The creator will review your profile.');
@@ -281,23 +291,43 @@ export default function TaskCard({
     };
 
     const handlePaymentConfirm = async () => {
-        if (!session?.user?.id) return;
-        setIsSubmitting(true);
-        try {
-            await updateDoc(doc(db, 'tasks', task.id), {
-                status: 'completed'
-            });
+    if (!session?.user?.id) return;
 
-            Alert.alert('Success!', 'Task moved to Done history.');
+    setIsSubmitting(true);
 
-            // Trigger UI refresh
-            if (onActionComplete) onActionComplete();
-        } catch (error: any) {
-            Alert.alert('Error', 'Failed to confirm payment: ' + error.message);
-        } finally {
-            setIsSubmitting(false);
+    try {
+        await updateDoc(doc(db, 'tasks', task.id), {
+            status: 'completed'
+        });
+
+        if (task.assigned_to) {
+            await createNotification(
+                task.assigned_to,
+                'Payment Confirmed! 💰',
+                `Payment has been completed for "${task.title}".`,
+                'payment_completed',
+                task.id
+            );
         }
-    };
+
+        Alert.alert(
+            'Success!',
+            'Task moved to Done history.'
+        );
+
+        if (onActionComplete) {
+            onActionComplete();
+        }
+
+    } catch (error: any) {
+        Alert.alert(
+            'Error',
+            'Failed to confirm payment: ' + error.message
+        );
+    } finally {
+        setIsSubmitting(false);
+    }
+};
 
     const handleReviewSubmit = async (rating: number, comment: string) => {
         if (!session?.user?.id) return;

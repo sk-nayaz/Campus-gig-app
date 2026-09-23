@@ -16,6 +16,7 @@ import { ChevronLeft, UserCircle2, CheckCircle2, Eye } from 'lucide-react-native
 import { db } from '../config/firebase';
 import { collection, query, where, getDocs, getDoc, doc, runTransaction } from 'firebase/firestore';
 import PublicProfileModal from '../components/PublicProfileModal';
+import { createNotification } from '../utils/notifications';
 
 export default function ReviewApplicantsScreen() {
     const route = useRoute<any>();
@@ -66,43 +67,68 @@ export default function ReviewApplicantsScreen() {
         }
     };
 
-    const handleApprove = async (applicationId: string, applicantId: string) => {
-        setIsApproving(applicationId);
-        try {
-            const taskRef = doc(db, 'tasks', taskId);
-            const appRef = doc(db, 'task_applications', applicationId);
+ const handleApprove = async (
+    applicationId: string,
+    applicantId: string
+) => {
+    setIsApproving(applicationId);
 
-            await runTransaction(db, async (transaction) => {
-                const taskDoc = await transaction.get(taskRef);
-                if (!taskDoc.exists()) {
-                    throw new Error("Task does not exist!");
-                }
+    try {
+        const taskRef = doc(db, 'tasks', taskId);
+        const appRef = doc(db, 'task_applications', applicationId);
 
-                if (taskDoc.data().assigned_to) {
-                    throw new Error("Task already assigned!");
-                }
+        await runTransaction(db, async (transaction) => {
+            const taskDoc = await transaction.get(taskRef);
 
-                transaction.update(taskRef, {
-                    assigned_to: applicantId,
-                    status: 'in_progress'
-                });
+            if (!taskDoc.exists()) {
+                throw new Error('Task does not exist!');
+            }
 
-                transaction.update(appRef, {
-                    status: 'accepted'
-                });
+            if (taskDoc.data().assigned_to) {
+                throw new Error('Task already assigned!');
+            }
+
+            transaction.update(taskRef, {
+                assigned_to: applicantId,
+                status: 'in_progress',
             });
-            Alert.alert(
-                "Worker Approved!",
-                "They have been assigned to this task and notified.",
-                [{ text: "OK", onPress: () => navigation.goBack() }]
-            );
 
-        } catch (error: any) {
-            console.error('Approve error:', error);
-            Alert.alert('Error', error.message || 'Could not approve applicant.');
-            setIsApproving(null);
-        }
-    };
+            transaction.update(appRef, {
+                status: 'accepted',
+            });
+        });
+
+        await createNotification(
+            applicantId,
+            'Application Accepted! 🎉',
+            'You have been selected for this task.',
+            'application_accepted',
+            taskId
+        );
+        // Approval succeeded
+        setIsApproving(null);
+
+        Alert.alert(
+            'Worker Approved!',
+            'They have been assigned to this task.',
+            [
+                {
+                    text: 'OK',
+                    onPress: () => navigation.goBack(),
+                },
+            ]
+        );
+    } catch (error: any) {
+        console.error('Approve error:', error);
+
+        setIsApproving(null);
+
+        Alert.alert(
+            'Error',
+            error.message || 'Could not approve applicant.'
+        );
+    }
+};
 
     return (
         <View style={styles.container}>
