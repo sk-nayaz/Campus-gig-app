@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { registerForPushNotificationsAsync } from '../utils/pushNotifications';
 import { auth, db } from '../config/firebase';
 
 export type Profile = {
@@ -57,7 +58,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         sessionUser.id = user.uid;
 
         setSession({ user: sessionUser });
+        try {
+            const pushToken = await registerForPushNotificationsAsync();
 
+            if (pushToken) {
+                await setDoc(
+                    doc(db, 'profiles', user.uid),
+                    {
+                        push_token: pushToken,
+                    },
+                    { merge: true }
+                );
+            }
+        } catch (error) {
+            console.error('Error registering push notifications:', error);
+        }
         try {
             const docRef = doc(db, 'profiles', user.uid);
             const docSnap = await getDoc(docRef);
