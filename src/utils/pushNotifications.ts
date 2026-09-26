@@ -3,6 +3,15 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 
+Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+    }),
+});
+
 export async function registerForPushNotificationsAsync() {
     // Push notifications don't work through the web version
     if (Platform.OS === 'web') {
