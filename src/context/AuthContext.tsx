@@ -3,6 +3,7 @@ import { User, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/a
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { registerForPushNotificationsAsync } from '../utils/pushNotifications';
 import { auth, db } from '../config/firebase';
+import * as Notifications from 'expo-notifications';
 
 export type Profile = {
     id: string;
@@ -96,10 +97,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             setLoading(true); // Lock the UI during transition
             checkUser(user);
         });
+        const notificationResponseSubscription =
+                Notifications.addNotificationResponseReceivedListener((response) => {
+                    console.log(
+                        'Notification tapped:',
+                        response.notification.request.content
+                    );
+                });
 
-        return () => {
-            unsubscribe();
-        };
+            return () => {
+                unsubscribe();
+                notificationResponseSubscription.remove();
+            };
     }, []);
 
     const signOut = async () => {
