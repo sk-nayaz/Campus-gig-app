@@ -1,9 +1,30 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { registerForPushNotificationsAsync } from '../utils/pushNotifications';
-import { auth, db } from '../config/firebase';
-import * as Notifications from 'expo-notifications';
+import React, {
+    createContext,
+    useContext,
+    useEffect,
+    useState,
+} from 'react';
+
+import {
+    User,
+    onAuthStateChanged,
+    signOut as firebaseSignOut,
+} from 'firebase/auth';
+
+import {
+    doc,
+    getDoc,
+    setDoc,
+} from 'firebase/firestore';
+
+import {
+    registerForPushNotificationsAsync,
+} from '../utils/pushNotifications';
+
+import {
+    auth,
+    db,
+} from '../config/firebase';
 
 export type Profile = {
     id: string;
@@ -22,7 +43,9 @@ export type Profile = {
 
 // Map Firebase User to Session for backward compatibility in the app
 export type Session = {
-    user: User & { id?: string };
+    user: User & {
+        id?: string;
+    };
 };
 
 type AuthContextType = {
@@ -37,14 +60,22 @@ const AuthContext = createContext<AuthContextType>({
     session: null,
     isOnboarded: false,
     loading: true,
-    signOut: async () => { },
-    setIsOnboarded: () => { },
+    signOut: async () => {},
+    setIsOnboarded: () => {},
 });
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+export const AuthProvider = ({
+    children,
+}: {
+    children: React.ReactNode;
+}) => {
     const [session, setSession] = useState<Session | null>(null);
-    const [isOnboarded, setIsOnboarded] = useState(false);
-    const [loading, setLoading] = useState(true);
+
+    const [isOnboarded, setIsOnboarded] =
+        useState(false);
+
+    const [loading, setLoading] =
+        useState(true);
 
     const checkUser = async (user: User | null) => {
         if (!user) {
@@ -54,38 +85,71 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             return;
         }
 
-        // Add id property for backward compatibility with older session.user.id
-        const sessionUser = user as User & { id?: string };
+        // Add id property for backward compatibility
+        // with older session.user.id usage.
+        const sessionUser = user as User & {
+            id?: string;
+        };
+
         sessionUser.id = user.uid;
 
-        setSession({ user: sessionUser });
+        setSession({
+            user: sessionUser,
+        });
+
+        // Register the device for push notifications.
         try {
-            const pushToken = await registerForPushNotificationsAsync();
+            const pushToken =
+                await registerForPushNotificationsAsync();
 
             if (pushToken) {
                 await setDoc(
-                    doc(db, 'profiles', user.uid),
+                    doc(
+                        db,
+                        'profiles',
+                        user.uid
+                    ),
                     {
                         push_token: pushToken,
                     },
-                    { merge: true }
+                    {
+                        merge: true,
+                    }
                 );
             }
         } catch (error) {
-            console.error('Error registering push notifications:', error);
+            console.error(
+                'Error registering push notifications:',
+                error
+            );
         }
+
+        // Fetch onboarding state.
         try {
-            const docRef = doc(db, 'profiles', user.uid);
-            const docSnap = await getDoc(docRef);
+            const docRef = doc(
+                db,
+                'profiles',
+                user.uid
+            );
+
+            const docSnap =
+                await getDoc(docRef);
 
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                setIsOnboarded(data?.onboarded === true);
+
+                setIsOnboarded(
+                    data?.onboarded === true
+                );
             } else {
                 setIsOnboarded(false);
             }
         } catch (error) {
-            console.error('Error fetching profile status:', error);
+            console.error(
+                'Error fetching profile status:',
+                error
+            );
+
             setIsOnboarded(false);
         } finally {
             setLoading(false);
@@ -93,37 +157,47 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
-            setLoading(true); // Lock the UI during transition
-            checkUser(user);
-        });
-        const notificationResponseSubscription =
-                Notifications.addNotificationResponseReceivedListener((response) => {
-                    console.log(
-                        'Notification tapped:',
-                        response.notification.request.content
-                    );
-                });
+        const unsubscribe =
+            onAuthStateChanged(
+                auth,
+                (user) => {
+                    // Lock the UI while auth state is changing.
+                    setLoading(true);
 
-            return () => {
-                unsubscribe();
-                notificationResponseSubscription.remove();
-            };
+                    checkUser(user);
+                }
+            );
+
+        return () => {
+            unsubscribe();
+        };
     }, []);
 
     const signOut = async () => {
         try {
             await firebaseSignOut(auth);
         } catch (error) {
-            console.error('Error signing out:', error);
+            console.error(
+                'Error signing out:',
+                error
+            );
         }
     };
 
     return (
-        <AuthContext.Provider value={{ session, isOnboarded, loading, signOut, setIsOnboarded }}>
+        <AuthContext.Provider
+            value={{
+                session,
+                isOnboarded,
+                loading,
+                signOut,
+                setIsOnboarded,
+            }}
+        >
             {children}
         </AuthContext.Provider>
     );
 };
 
-export const useAuth = () => useContext(AuthContext);
+export const useAuth = () =>
+    useContext(AuthContext);
